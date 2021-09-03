@@ -1,0 +1,89 @@
+---
+title: "tdm_graph"
+author: "Mango117"
+date: "31 August 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document.
+
+```{r tdm}
+#For this graph, we are using the test results from the AAL3 Dictionary + Topic Modelled pdfs
+setwd("/Users/manojarachige/Documents/Coding/BMedScDOC1/BMedScDOC_Graph/aal_graph")
+tdm1 <- read.csv(file = "/Users/manojarachige/Documents/Coding/BMedScDOC1/BMedScDOC_Graph/Inputs/TM_pdfs_aal.csv")
+tdm1 <- tdm1[,-c(1)]
+tdm1 <- t(tdm1)
+
+m <- as.matrix(tdm1)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+head(d, 10)
+```
+
+```{r wordcloud}
+library(wordcloud)
+set.seed(1234)
+wordcloud(words = d$word, freq = d$freq, min.freq = 1,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+
+barplot(d[1:20,]$freq, las = 2, names.arg = d[1:20,]$word,
+        col ="lightblue", main ="Most frequent words",
+        ylab = "Word frequencies")
+```
+
+```{r graph}
+library(pubmed.mineR)
+cos_sim_calc(tdm1) #output file cosimdata.txt #cytoscape
+cos=read.table("cossimdata.txt",header=FALSE,sep="\t")
+
+cos=na.omit(cos)
+library(igraph)
+relations <- data.frame(from=cos[,1], to=cos[,2],   weight=abs(cos[,3]))
+relations2=relations[-row(relations)[relations == 0],] #remove 0
+#Building a directed graph
+g.1a <- graph.data.frame(relations2, directed=TRUE)
+V(g.1a)$size<-6
+min<-.95 #threshold
+layout1 <- layout.auto(g.1a)
+#Give the graph lots of room
+#opar <- par()$mar; par(mar=rep(3, 4)) 
+#plot(g.1a, layout=layout1)
+
+plot(g.1a, layout=layout1, edge.width=ifelse(E(g.1a)$weight>=min, E(g.1a)$weight, NA)) 
+```
+This graph is *DIRECTED*
+
+```{r graph plot}
+library(ggraph)
+#ggraph(g.1a, layout = 'kk')
+
+#ggraph(g.1a, layout = 'linear', circular = TRUE)
+#+geom_edge_link(aes(colour=E(g.1a)$weight))
+
+#ggraph(g.1a, 'partition') + 
+    geom_node_tile(aes(fill = depth), size = 0.25)
+
+ggraph(g.1a, 'partition', circular = TRUE) + 
+    geom_node_arc_bar(aes(fill = depth), size = 0.25)
+```
+
+```{r graphml create}
+wc=cluster_walktrap(g.1a) 
+modularity(wc)
+plot(wc,g.1a, layout=layout1) #remove vertex label
+
+V(g.1a)$color<-wc$membership
+
+#plot(g.1a,vertex.size=betweenness(g.1a))
+#plot(g.1a,vertex.color=V(g.1a)$color,vertex.size=degree(g.1a))
+write.graph(g.1a,"tdm_aal_graph.graphml",format = "graphml")
+```
